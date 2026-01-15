@@ -10,6 +10,7 @@ from futu import (
     OpenQuoteContext,
     TrdSide,
     TrdEnv,
+    TrdMarket,
     OrderType,
     OrderStatus,
     RET_OK,
@@ -61,10 +62,18 @@ class FutuTrader:
             self._trd_ctx = OpenSecTradeContext(
                 host=self.host,
                 port=self.port,
-                filter_trdmarket=None,
+                filter_trdmarket=TrdMarket.US,
             )
             self._quote_ctx = OpenQuoteContext(host=self.host, port=self.port)
-            logger.info(f"Connected to FutuOpenD at {self.host}:{self.port}")
+
+            # Log available accounts for debugging
+            ret, acc_list = self._trd_ctx.get_acc_list()
+            if ret == RET_OK:
+                logger.info(f"Available accounts: {acc_list.to_string()}")
+            else:
+                logger.warning(f"Could not get account list: {acc_list}")
+
+            logger.info(f"Connected to FutuOpenD at {self.host}:{self.port} (US market, trd_env={self.trd_env})")
             return True
         except Exception as e:
             logger.error(f"Failed to connect to FutuOpenD: {e}")
@@ -260,6 +269,7 @@ class FutuTrader:
             order_price = price
 
         try:
+            logger.info(f"Placing order: code={code}, qty={quantity}, side={trd_side}, type={futu_order_type}, trd_env={self.trd_env}")
             ret, data = self._trd_ctx.place_order(
                 price=order_price,
                 qty=quantity,
@@ -268,6 +278,7 @@ class FutuTrader:
                 order_type=futu_order_type,
                 trd_env=self.trd_env,
             )
+            logger.info(f"place_order returned: ret={ret}, data={data}")
 
             if ret == RET_OK:
                 order_id = str(data["order_id"].iloc[0]) if "order_id" in data.columns else None
