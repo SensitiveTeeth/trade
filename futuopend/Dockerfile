@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG FUTU_VERSION=9.6.5618
 RUN wget -q https://softwaredownload.futunn.com/Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04.tar.gz \
     && tar -xzf Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04.tar.gz \
-    && mv Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04/* . \
+    && mv Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04/Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04/* . \
     && rm -rf Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04.tar.gz Futu_OpenD_${FUTU_VERSION}_Ubuntu18.04
 
 # 暴露端口
