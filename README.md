@@ -51,7 +51,7 @@ docker --version
 
 The repo is already cloned. Edit the config:
 ```bash
-nano ~/trading/.env
+vim ~/trading/.env
 ```
 
 Fill in the following:
@@ -62,7 +62,7 @@ Fill in the following:
 ### 6. Configure FutuOpenD
 
 ```bash
-nano ~/trading/futuopend/FutuOpenD.xml
+vim ~/trading/futuopend/FutuOpenD.xml
 ```
 
 Fill in the following:

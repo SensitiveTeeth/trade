@@ -12,11 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 下載並解壓 FutuOpenD
-ARG FUTU_VERSION=10.0.4208
-RUN wget -q https://softwaredownload.futunn.com/FutuOpenD_${FUTU_VERSION}_Ubuntu20.04.tar.gz \
-    && tar -xzf FutuOpenD_${FUTU_VERSION}_Ubuntu20.04.tar.gz \
-    && mv FutuOpenD/* . \
-    && rm -rf FutuOpenD_${FUTU_VERSION}_Ubuntu20.04.tar.gz FutuOpenD
+ARG FUTU_VERSION=9.4.5418
+RUN wget -q https://softwaredownload.futunn.com/FutuOpenD_${FUTU_VERSION}_Ubuntu22.04.tar.gz \
+    && tar -xzf FutuOpenD_${FUTU_VERSION}_Ubuntu22.04.tar.gz \
+    && mv FutuOpenD_${FUTU_VERSION}_Ubuntu22.04/* . \
+    && rm -rf FutuOpenD_${FUTU_VERSION}_Ubuntu22.04.tar.gz FutuOpenD_${FUTU_VERSION}_Ubuntu22.04
 
 # 暴露端口
 EXPOSE 11111 11112
