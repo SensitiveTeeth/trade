@@ -11,8 +11,8 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 3
-RETRY_DELAYS = [2, 5, 10]  # seconds
+MAX_RETRIES = 5
+MIN_SEND_INTERVAL = 0.5  # Minimum seconds between messages
 
 
 class TelegramNotifier:
@@ -26,10 +26,11 @@ class TelegramNotifier:
         self.bot_token = bot_token or config.TELEGRAM_BOT_TOKEN
         self.chat_id = chat_id or config.TELEGRAM_CHAT_ID
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
+        self._last_send_time: float = 0
 
     def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
         """
-        Send a message to Telegram.
+        Send a message to Telegram with rate limiting.
 
         Args:
             message: Message text
@@ -42,6 +43,11 @@ class TelegramNotifier:
             logger.warning("Telegram not configured, skipping notification")
             return False
 
+        # Rate limiting: ensure minimum interval between messages
+        elapsed = time.time() - self._last_send_time
+        if elapsed < MIN_SEND_INTERVAL:
+            time.sleep(MIN_SEND_INTERVAL - elapsed)
+
         url = f"{self.base_url}/sendMessage"
         payload = {
             "chat_id": self.chat_id,
@@ -53,11 +59,28 @@ class TelegramNotifier:
             try:
                 response = requests.post(url, data=payload, timeout=10)
                 response.raise_for_status()
+                self._last_send_time = time.time()
                 logger.debug(f"Telegram message sent: {message[:50]}...")
                 return True
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    # Rate limited - get retry_after from response
+                    try:
+                        retry_after = e.response.json().get("parameters", {}).get("retry_after", 5)
+                    except Exception:
+                        retry_after = 5 * (attempt + 1)
+                    logger.warning(f"Telegram rate limited (429), waiting {retry_after}s...")
+                    time.sleep(retry_after)
+                elif attempt < MAX_RETRIES - 1:
+                    delay = 2 ** attempt  # Exponential backoff: 1, 2, 4, 8, 16s
+                    logger.warning(f"Telegram send failed, retrying in {delay}s: {e}")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"Failed to send Telegram message after {MAX_RETRIES} attempts: {e}")
+                    return False
             except requests.exceptions.RequestException as e:
                 if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAYS[attempt]
+                    delay = 2 ** attempt
                     logger.warning(f"Telegram send failed, retrying in {delay}s: {e}")
                     time.sleep(delay)
                 else:
