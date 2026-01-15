@@ -86,10 +86,38 @@ python3 -c "import hashlib; print(hashlib.md5('your_password'.encode()).hexdiges
 
 Enter the 32-character output into `login_pwd_md5`.
 
-### 7. Start Services
+### 7. Start FutuOpenD and Enter Verification Code
+
+FutuOpenD requires SMS verification code on first login (per IP/device). This is a security requirement by Futu and cannot be bypassed.
 
 ```bash
-cd ~/trading && docker compose up -d
+# Start FutuOpenD first
+cd ~/trading && docker compose up -d futuopend
+
+# Attach to container to enter verification code
+docker attach futuopend
+```
+
+Wait for SMS verification code, then enter:
+```
+input_phone_verify_code -code=XXXXXX
+```
+
+After successful login (you'll see `登录成功`), detach from container:
+```
+Press Ctrl+P then Ctrl+Q
+```
+
+Verify FutuOpenD is healthy:
+```bash
+docker compose ps
+# Should show: futuopend ... (healthy)
+```
+
+### 8. Start Trading Service
+
+```bash
+docker compose up -d
 ```
 
 ## Common Commands
@@ -181,6 +209,13 @@ df -h
 2. **Keep API keys secure** - Do not commit `.env` to Git
 3. **Monitor service status** - Regularly check Telegram notifications and logs
 4. **Max positions** - Default limit is 8 concurrent positions
+5. **FutuOpenD verification code** - Required on first login per IP/device. If EC2 IP changes (e.g., after stop/start), you may need to re-enter verification code. Consider using Elastic IP for stable address.
+6. **Re-enter verification code** - If FutuOpenD requires re-verification:
+   ```bash
+   docker attach futuopend
+   # Enter: input_phone_verify_code -code=XXXXXX
+   # Detach: Ctrl+P Ctrl+Q
+   ```
 
 ## TODO
 
