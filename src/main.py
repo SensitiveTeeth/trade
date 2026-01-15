@@ -49,12 +49,16 @@ def setup_schedule() -> None:
     # Daily AI score check (before US market open, HKT 21:00)
     schedule.every().day.at(config.DAILY_CHECK_TIME).do(trading_strategy.run_daily_check)
 
+    # Daily summary (after US market close, HKT 05:00)
+    schedule.every().day.at(config.DAILY_SUMMARY_TIME).do(trading_strategy.run_daily_summary)
+
     # Price check every N minutes during market hours
     schedule.every(config.PRICE_CHECK_INTERVAL_MINUTES).minutes.do(
         trading_strategy.run_price_check
     )
 
     logger.info(f"Scheduled daily check at {config.DAILY_CHECK_TIME} HKT")
+    logger.info(f"Scheduled daily summary at {config.DAILY_SUMMARY_TIME} HKT")
     logger.info(f"Scheduled price check every {config.PRICE_CHECK_INTERVAL_MINUTES} minutes")
 
 

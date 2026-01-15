@@ -11,10 +11,15 @@ from config import config
 @contextmanager
 def get_db_connection():
     """Get database connection context manager."""
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    # Enable WAL mode for better concurrency
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -69,6 +74,11 @@ def init_database() -> None:
                 UNIQUE(date, ticker)
             )
         """)
+
+        # Create indexes for performance
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_positions_ticker ON positions(ticker)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_score_date_ticker ON ai_score_history(date, ticker)")
 
         conn.commit()
 

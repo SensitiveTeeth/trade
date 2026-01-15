@@ -1,6 +1,7 @@
 """Futu OpenAPI trading module."""
 
 import logging
+import time
 from typing import Optional
 from dataclasses import dataclass
 
@@ -10,12 +11,17 @@ from futu import (
     TrdSide,
     TrdEnv,
     OrderType,
+    OrderStatus,
     RET_OK,
 )
 
 from config import config
 
 logger = logging.getLogger(__name__)
+
+# Order status polling settings
+ORDER_POLL_INTERVAL = 1  # seconds
+ORDER_POLL_TIMEOUT = 30  # seconds
 
 
 @dataclass
@@ -26,7 +32,9 @@ class OrderResult:
     order_id: Optional[str] = None
     price: Optional[float] = None
     quantity: Optional[int] = None
+    filled_quantity: Optional[int] = None
     message: Optional[str] = None
+    partial_fill: bool = False
 
 
 class FutuTrader:
@@ -110,6 +118,95 @@ class FutuTrader:
                 results[ticker] = price
         return results
 
+    def _get_order_status(self, order_id: str) -> Optional[dict]:
+        """Get order status by order ID."""
+        try:
+            ret, data = self._trd_ctx.order_list_query(
+                order_id=order_id,
+                trd_env=self.trd_env,
+            )
+            if ret == RET_OK and not data.empty:
+                row = data.iloc[0]
+                return {
+                    "order_id": str(row["order_id"]),
+                    "status": row["order_status"],
+                    "qty": int(row["qty"]),
+                    "filled_qty": int(row.get("dealt_qty", 0)),
+                    "avg_price": float(row.get("dealt_avg_price", 0)),
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting order status: {e}")
+            return None
+
+    def _wait_for_order_fill(
+        self,
+        order_id: str,
+        requested_qty: int,
+        timeout: int = ORDER_POLL_TIMEOUT,
+    ) -> dict:
+        """
+        Poll order status until filled or timeout.
+
+        Returns:
+            dict with filled_qty, avg_price, partial_fill, status
+        """
+        start_time = time.time()
+        final_statuses = [
+            OrderStatus.FILLED_ALL,
+            OrderStatus.FILLED_PART,
+            OrderStatus.CANCELLED_ALL,
+            OrderStatus.CANCELLED_PART,
+            OrderStatus.FAILED,
+            OrderStatus.DELETED,
+        ]
+
+        while time.time() - start_time < timeout:
+            status_info = self._get_order_status(order_id)
+            if not status_info:
+                time.sleep(ORDER_POLL_INTERVAL)
+                continue
+
+            order_status = status_info["status"]
+
+            # Check if order reached final status
+            if order_status in final_statuses:
+                filled_qty = status_info["filled_qty"]
+                avg_price = status_info["avg_price"]
+                partial_fill = filled_qty > 0 and filled_qty < requested_qty
+
+                logger.info(
+                    f"Order {order_id} final status: {order_status}, "
+                    f"filled: {filled_qty}/{requested_qty} @ ${avg_price:.2f}"
+                )
+
+                return {
+                    "filled_qty": filled_qty,
+                    "avg_price": avg_price,
+                    "partial_fill": partial_fill,
+                    "status": order_status,
+                }
+
+            time.sleep(ORDER_POLL_INTERVAL)
+
+        # Timeout - get last known status
+        logger.warning(f"Order {order_id} polling timeout after {timeout}s")
+        status_info = self._get_order_status(order_id)
+        if status_info:
+            return {
+                "filled_qty": status_info["filled_qty"],
+                "avg_price": status_info["avg_price"],
+                "partial_fill": status_info["filled_qty"] < requested_qty,
+                "status": status_info["status"],
+            }
+
+        return {
+            "filled_qty": 0,
+            "avg_price": 0,
+            "partial_fill": False,
+            "status": "UNKNOWN",
+        }
+
     def place_order(
         self,
         ticker: str,
@@ -119,7 +216,7 @@ class FutuTrader:
         price: Optional[float] = None,
     ) -> OrderResult:
         """
-        Place an order.
+        Place an order and wait for fill confirmation.
 
         Args:
             ticker: Stock ticker (e.g., "BAC")
@@ -129,7 +226,7 @@ class FutuTrader:
             price: Limit price (required for LIMIT orders)
 
         Returns:
-            OrderResult with execution details.
+            OrderResult with actual execution details.
         """
         if not self._ensure_connected():
             return OrderResult(success=False, message="Not connected to FutuOpenD")
@@ -158,14 +255,45 @@ class FutuTrader:
 
             if ret == RET_OK:
                 order_id = str(data["order_id"].iloc[0]) if "order_id" in data.columns else None
-                filled_price = self.get_quote(ticker)  # Get approximate fill price
-                logger.info(f"Order placed: {side} {quantity} {ticker} @ {filled_price}")
-                return OrderResult(
-                    success=True,
-                    order_id=order_id,
-                    price=filled_price,
-                    quantity=quantity,
-                )
+
+                if order_id:
+                    # Wait for order to fill and get actual execution details
+                    fill_info = self._wait_for_order_fill(order_id, quantity)
+
+                    filled_qty = fill_info["filled_qty"]
+                    avg_price = fill_info["avg_price"]
+                    partial_fill = fill_info["partial_fill"]
+
+                    if filled_qty > 0:
+                        logger.info(
+                            f"Order executed: {side} {filled_qty}/{quantity} {ticker} @ ${avg_price:.2f}"
+                        )
+                        return OrderResult(
+                            success=True,
+                            order_id=order_id,
+                            price=avg_price,
+                            quantity=quantity,
+                            filled_quantity=filled_qty,
+                            partial_fill=partial_fill,
+                            message=f"Filled {filled_qty}/{quantity}" if partial_fill else None,
+                        )
+                    else:
+                        logger.error(f"Order {order_id} not filled: {fill_info['status']}")
+                        return OrderResult(
+                            success=False,
+                            order_id=order_id,
+                            filled_quantity=0,
+                            message=f"Order not filled: {fill_info['status']}",
+                        )
+                else:
+                    # Fallback if no order_id (shouldn't happen)
+                    filled_price = self.get_quote(ticker)
+                    return OrderResult(
+                        success=True,
+                        price=filled_price,
+                        quantity=quantity,
+                        filled_quantity=quantity,
+                    )
             else:
                 logger.error(f"Order failed: {data}")
                 return OrderResult(success=False, message=str(data))

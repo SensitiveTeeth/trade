@@ -241,15 +241,16 @@ class TradingStrategy:
 
         result = futu_trader.buy(ticker, quantity)
 
-        if result.success and result.price:
+        if result.success and result.price and result.filled_quantity:
+            filled_qty = result.filled_quantity
             # Calculate target and stop loss
             target_price = result.price * (1 + self.take_profit_pct)
             stop_loss = result.price * (1 - self.stop_loss_pct)
 
-            # Update database
+            # Update database with actual filled quantity
             add_position(
                 ticker=ticker,
-                quantity=quantity,
+                quantity=filled_qty,
                 avg_cost=result.price,
                 ai_score=signal.ai_score,
                 target_price=target_price,
@@ -258,24 +259,30 @@ class TradingStrategy:
             log_trade(
                 ticker=ticker,
                 action="BUY",
-                quantity=quantity,
+                quantity=filled_qty,
                 price=result.price,
                 ai_score=signal.ai_score,
                 reason=signal.reason,
                 order_id=result.order_id,
             )
 
-            # Send notification
+            # Send notification with partial fill info if applicable
+            reason = signal.reason
+            if result.partial_fill:
+                reason = f"{signal.reason} (Partial fill: {filled_qty}/{quantity})"
+
             telegram_notifier.notify_trade(
                 ticker=ticker,
                 action="BUY",
-                quantity=quantity,
+                quantity=filled_qty,
                 price=result.price,
                 ai_score=signal.ai_score,
-                reason=signal.reason,
+                reason=reason,
             )
 
-            logger.info(f"BUY executed: {quantity} {ticker} @ ${result.price:.2f}")
+            logger.info(f"BUY executed: {filled_qty}/{quantity} {ticker} @ ${result.price:.2f}")
+            if result.partial_fill:
+                logger.warning(f"Partial fill for {ticker}: {filled_qty}/{quantity} shares")
         else:
             logger.error(f"BUY failed for {ticker}: {result.message}")
             telegram_notifier.notify_error(f"Buy order failed for {ticker}: {result.message}")
@@ -296,35 +303,62 @@ class TradingStrategy:
 
         result = futu_trader.sell(ticker, quantity)
 
-        if result.success and result.price:
-            # Update database
-            remove_position(ticker)
+        if result.success and result.price and result.filled_quantity:
+            filled_qty = result.filled_quantity
+
+            # Update database based on fill status
+            if result.partial_fill:
+                # Partial fill: update remaining position
+                remaining_qty = quantity - filled_qty
+                self._update_position_quantity(ticker, remaining_qty, position["avg_cost"])
+                logger.warning(f"Partial sell for {ticker}: {filled_qty}/{quantity} shares, {remaining_qty} remaining")
+            else:
+                # Full fill: remove position
+                remove_position(ticker)
+
             log_trade(
                 ticker=ticker,
                 action="SELL",
-                quantity=quantity,
+                quantity=filled_qty,
                 price=result.price,
                 ai_score=signal.ai_score,
                 reason=signal.reason,
                 order_id=result.order_id,
             )
 
-            # Send notification
+            # Send notification with partial fill info if applicable
+            reason = signal.reason
+            if result.partial_fill:
+                reason = f"{signal.reason} (Partial fill: {filled_qty}/{quantity})"
+
             telegram_notifier.notify_trade(
                 ticker=ticker,
                 action="SELL",
-                quantity=quantity,
+                quantity=filled_qty,
                 price=result.price,
                 ai_score=signal.ai_score,
-                reason=signal.reason,
+                reason=reason,
+                avg_cost=position["avg_cost"],
             )
 
-            logger.info(f"SELL executed: {quantity} {ticker} @ ${result.price:.2f}")
+            logger.info(f"SELL executed: {filled_qty}/{quantity} {ticker} @ ${result.price:.2f}")
         else:
             logger.error(f"SELL failed for {ticker}: {result.message}")
             telegram_notifier.notify_error(f"Sell order failed for {ticker}: {result.message}")
 
         return result
+
+    def _update_position_quantity(self, ticker: str, new_quantity: int, avg_cost: float) -> None:
+        """Update position with new quantity after partial sell."""
+        from database import get_db_connection
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE positions SET quantity = ? WHERE ticker = ?",
+                (new_quantity, ticker),
+            )
+            conn.commit()
 
     def run_daily_check(self) -> None:
         """Run daily AI score check for all watchlist stocks."""
@@ -399,6 +433,30 @@ class TradingStrategy:
                 logger.error(f"Error checking price for {ticker}: {e}")
 
         logger.info("Price check completed")
+
+    def run_daily_summary(self) -> None:
+        """Send daily summary after market close."""
+        logger.info("Generating daily summary...")
+
+        # Get positions from broker for accurate market values
+        broker_positions = futu_trader.get_positions()
+
+        if not broker_positions:
+            logger.info("No positions to summarize")
+            return
+
+        # Calculate totals
+        total_value = sum(p.get("market_value", 0) for p in broker_positions)
+        daily_pnl = sum(p.get("unrealized_pnl", 0) for p in broker_positions)
+
+        # Send summary notification
+        telegram_notifier.notify_daily_summary(
+            positions=broker_positions,
+            total_value=total_value,
+            daily_pnl=daily_pnl,
+        )
+
+        logger.info(f"Daily summary sent: {len(broker_positions)} positions, total ${total_value:,.2f}")
 
 
 # Singleton instance

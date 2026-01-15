@@ -25,8 +25,10 @@ class Config:
     IS_SIMULATION: bool = os.getenv("IS_SIMULATION", "true").lower() == "true"
     MAX_POSITIONS: int = int(os.getenv("MAX_POSITIONS", "8"))
 
-    # Watchlist - Default bank stocks
-    WATCHLIST: list[str] = ["BAC", "FHN", "OZK", "NBTB", "SSB"]
+    # Watchlist - configurable via environment
+    WATCHLIST: list[str] = [
+        s.strip() for s in os.getenv("WATCHLIST", "BAC,FHN,OZK,NBTB,SSB").split(",")
+    ]
 
     # Trading Strategy Thresholds
     BUY_SCORE_THRESHOLD: int = 10  # Buy when AI Score = 10
@@ -38,7 +40,8 @@ class Config:
     DB_PATH: str = os.getenv("DB_PATH", "/app/data/trading.db")
 
     # Schedule (Hong Kong Time)
-    DAILY_CHECK_TIME: str = "21:00"  # Before US market open
+    DAILY_CHECK_TIME: str = "21:00"  # Before US market open (9:00 AM ET)
+    DAILY_SUMMARY_TIME: str = "05:00"  # After US market close (4:00 PM ET)
     PRICE_CHECK_INTERVAL_MINUTES: int = 1
 
 

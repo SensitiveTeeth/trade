@@ -1,6 +1,5 @@
-futu-api>=9.0.0
-requests>=2.31.0
-schedule>=1.2.0
-python-telegram-bot>=20.0
-aiohttp>=3.9.0
-python-dotenv>=1.0.0
+futu-api>=9.0.0,<10.0.0
+requests>=2.31.0,<3.0.0
+schedule>=1.2.0,<2.0.0
+python-telegram-bot>=20.0,<21.0
+python-dotenv>=1.0.0,<2.0.0
