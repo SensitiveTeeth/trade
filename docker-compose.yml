@@ -35,17 +35,14 @@ services:
     env_file:
       - .env
     environment:
-      - FUTU_HOST=futuopend
+      # Use localhost since we share network namespace with futuopend
+      - FUTU_HOST=127.0.0.1
       - FUTU_PORT=11111
       - TZ=Asia/Hong_Kong
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     restart: unless-stopped
-    networks:
-      - trading-net
-
-networks:
-  trading-net:
-    driver: bridge
+    # Share network namespace with futuopend to avoid cross-network encryption requirement
+    network_mode: "service:futuopend"
 
