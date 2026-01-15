@@ -12,8 +12,8 @@ services:
       - "11112:11112"  # Quote API
     volumes:
       - ./futuopend/FutuOpenD.xml:/app/FutuOpenD.xml
-      - ./futuopend/AppData.dat:/app/AppData.dat
-      - ./futuopend/Log:/app/Log
+    stdin_open: true
+    tty: true
     restart: unless-stopped
     networks:
       - trading-net
