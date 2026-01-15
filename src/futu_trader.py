@@ -13,6 +13,7 @@ from futu import (
     OrderType,
     OrderStatus,
     RET_OK,
+    SubType,
 )
 
 from config import config
@@ -85,6 +86,18 @@ class FutuTrader:
             return self.connect()
         return True
 
+    def _subscribe(self, code: str) -> bool:
+        """Subscribe to stock data. Required before getting quotes."""
+        try:
+            ret, data = self._quote_ctx.subscribe(code, [SubType.QUOTE], subscribe_push=False)
+            if ret == RET_OK:
+                return True
+            logger.warning(f"Failed to subscribe {code}: {data}")
+            return False
+        except Exception as e:
+            logger.warning(f"Error subscribing {code}: {e}")
+            return False
+
     def get_quote(self, ticker: str) -> Optional[float]:
         """
         Get current price for a ticker.
@@ -100,6 +113,9 @@ class FutuTrader:
 
         code = f"US.{ticker}"
         try:
+            # Subscribe first (required for NASDAQ Basic)
+            self._subscribe(code)
+
             ret, data = self._quote_ctx.get_stock_quote(code)
             if ret == RET_OK and not data.empty:
                 return float(data["last_price"].iloc[0])
