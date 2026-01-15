@@ -12,8 +12,8 @@ services:
       - "11112:11112"  # Quote API
     volumes:
       - ./futuopend/FutuOpenD.xml:/app/FutuOpenD.xml
-      - futu_data:/app/Log
-      - futu_license:/app/License
+      - futu_appdata:/app/AppData.dat
+      - futu_log:/app/Log
     restart: unless-stopped
     networks:
       - trading-net
@@ -50,5 +50,5 @@ networks:
     driver: bridge
 
 volumes:
-  futu_data:
-  futu_license:
+  futu_appdata:
+  futu_log:
