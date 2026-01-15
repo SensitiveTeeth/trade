@@ -139,6 +139,17 @@ def remove_position(ticker: str) -> None:
         conn.commit()
 
 
+def update_position(ticker: str, quantity: int, avg_cost: float) -> None:
+    """Update an existing position's quantity and avg_cost."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE positions SET quantity = ?, avg_cost = ? WHERE ticker = ?",
+            (quantity, avg_cost, ticker),
+        )
+        conn.commit()
+
+
 def get_position(ticker: str) -> Optional[dict]:
     """Get a single position."""
     with get_db_connection() as conn:

@@ -11,6 +11,7 @@ from database import (
     get_position_count,
     add_position,
     remove_position,
+    update_position,
     log_trade,
     save_ai_score,
 )
@@ -51,43 +52,74 @@ class TradingStrategy:
 
         # Get actual positions from Futu
         broker_positions = futu_trader.get_positions()
-        broker_tickers = {p["ticker"] for p in broker_positions}
+        broker_map = {p["ticker"]: p for p in broker_positions}
+        broker_tickers = set(broker_map.keys())
 
         # Get local positions from database
         local_positions = get_all_positions()
-        local_tickers = {p["ticker"] for p in local_positions}
+        local_map = {p["ticker"]: p for p in local_positions}
+        local_tickers = set(local_map.keys())
 
-        # Find discrepancies
+        # Track changes for notification
+        added = []
+        removed = []
+        updated = []
+
+        # Find positions missing locally (in broker but not in DB)
         missing_locally = broker_tickers - local_tickers
-        missing_in_broker = local_tickers - broker_tickers
-
-        # Log and handle discrepancies
         if missing_locally:
             logger.warning(f"Positions in broker but not in DB: {missing_locally}")
-            for pos in broker_positions:
-                if pos["ticker"] in missing_locally:
-                    # Add missing position to database
-                    add_position(
-                        ticker=pos["ticker"],
-                        quantity=pos["quantity"],
-                        avg_cost=pos["avg_cost"],
-                    )
-                    logger.info(f"Added missing position: {pos['ticker']}")
+            for ticker in missing_locally:
+                pos = broker_map[ticker]
+                add_position(
+                    ticker=pos["ticker"],
+                    quantity=pos["quantity"],
+                    avg_cost=pos["avg_cost"],
+                )
+                added.append(ticker)
+                logger.info(f"Added missing position: {ticker} (qty={pos['quantity']}, cost=${pos['avg_cost']:.2f})")
 
+        # Find positions missing in broker (in DB but not in broker)
+        missing_in_broker = local_tickers - broker_tickers
         if missing_in_broker:
             logger.warning(f"Positions in DB but not in broker: {missing_in_broker}")
             for ticker in missing_in_broker:
-                # Remove stale position from database
                 remove_position(ticker)
+                removed.append(ticker)
                 logger.info(f"Removed stale position: {ticker}")
 
-        # Notify if any discrepancies found
-        if missing_locally or missing_in_broker:
-            telegram_notifier.notify_error(
-                f"Position sync: Added {len(missing_locally)}, Removed {len(missing_in_broker)}"
-            )
+        # Check for quantity/cost differences in existing positions
+        common_tickers = broker_tickers & local_tickers
+        for ticker in common_tickers:
+            broker_pos = broker_map[ticker]
+            local_pos = local_map[ticker]
 
-        logger.info("Position sync completed")
+            broker_qty = broker_pos["quantity"]
+            local_qty = local_pos["quantity"]
+            broker_cost = broker_pos["avg_cost"]
+            local_cost = local_pos["avg_cost"]
+
+            # Update if quantity or avg_cost differs
+            if broker_qty != local_qty or abs(broker_cost - local_cost) > 0.01:
+                update_position(ticker, broker_qty, broker_cost)
+                updated.append(ticker)
+                logger.info(
+                    f"Updated position {ticker}: qty {local_qty}->{broker_qty}, "
+                    f"cost ${local_cost:.2f}->${broker_cost:.2f}"
+                )
+
+        # Notify if any changes were made
+        if added or removed or updated:
+            changes = []
+            if added:
+                changes.append(f"Added: {', '.join(added)}")
+            if removed:
+                changes.append(f"Removed: {', '.join(removed)}")
+            if updated:
+                changes.append(f"Updated: {', '.join(updated)}")
+            telegram_notifier.notify_error(f"Position sync: {'; '.join(changes)}")
+
+        logger.info(f"Position sync completed: {len(added)} added, {len(removed)} removed, {len(updated)} updated")
 
     def analyze_ticker(self, ticker: str) -> TradeSignal:
         """
@@ -385,6 +417,7 @@ class TradingStrategy:
         """Check Danelfin for AI Score 10 stocks to buy."""
         logger.info("Fetching AI Score 10 stocks from Danelfin...")
 
+        # Get all stocks with AI Score = 10 from Danelfin API
         top_stocks = danelfin_client.get_top_stocks(ai_score=10)
 
         if not top_stocks:

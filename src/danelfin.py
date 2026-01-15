@@ -37,35 +37,31 @@ class DanelfinClient:
         self.session = requests.Session()
         self.session.headers.update({"x-api-key": self.api_key})
 
-    def _fetch_score_for_date(self, ticker: str, date: str) -> Optional[DanelfinScore]:
-        """Fetch score for a specific date. Returns None if not found."""
-        params = {"ticker": ticker, "date": date}
+    def _fetch_ticker_history(self, ticker: str) -> Optional[dict]:
+        """
+        Fetch historical scores for a ticker (without date param).
+
+        Returns dict with dates as keys, e.g.:
+        {"2026-01-14": {"aiscore": 10, "technical": 10, ...}, ...}
+        """
+        params = {"ticker": ticker}
 
         try:
             response = self.session.get(self.base_url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
 
-            return DanelfinScore(
-                ticker=ticker,
-                ai_score=data.get("aiscore", 0),
-                fundamental_score=data.get("fundamental", 0),
-                technical_score=data.get("technical", 0),
-                sentiment_score=data.get("sentiment", 0),
-                target_price=data.get("target_price"),
-                date=date,
-            )
+            if isinstance(data, dict) and data:
+                return data
+            return None
 
         except requests.exceptions.Timeout:
             logger.error(f"Danelfin API timeout for {ticker}")
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                # Data not available for this date, not an error
-                return None
             logger.error(f"Danelfin API HTTP error for {ticker}: {e}")
         except requests.exceptions.RequestException as e:
             logger.error(f"Danelfin API request error for {ticker}: {e}")
-        except (KeyError, ValueError) as e:
+        except Exception as e:
             logger.error(f"Danelfin API parse error for {ticker}: {e}")
 
         return None
@@ -74,29 +70,52 @@ class DanelfinClient:
         """
         Get AI score for a ticker.
 
-        If data for the requested date is not available, automatically tries
-        previous days up to MAX_LOOKBACK_DAYS to find the most recent data.
+        Fetches historical data and returns the most recent score (or score for specific date).
 
         Args:
             ticker: Stock ticker symbol (e.g., "BAC")
-            date: Date in YYYY-MM-DD format. Defaults to today.
+            date: Date in YYYY-MM-DD format. If None, returns the most recent available.
 
         Returns:
             DanelfinScore object or None if failed.
         """
-        start_date = datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
+        history = self._fetch_ticker_history(ticker)
+        if not history:
+            logger.warning(f"No Danelfin data found for {ticker}")
+            return None
 
-        for days_back in range(MAX_LOOKBACK_DAYS + 1):
-            check_date = start_date - timedelta(days=days_back)
-            date_str = check_date.strftime("%Y-%m-%d")
+        # If specific date requested, try to find it
+        if date and date in history:
+            scores = history[date]
+            return DanelfinScore(
+                ticker=ticker,
+                ai_score=scores.get("aiscore", 0),
+                fundamental_score=scores.get("fundamental", 0),
+                technical_score=scores.get("technical", 0),
+                sentiment_score=scores.get("sentiment", 0),
+                target_price=scores.get("target_price"),
+                date=date,
+            )
 
-            score = self._fetch_score_for_date(ticker, date_str)
-            if score:
-                if days_back > 0:
-                    logger.info(f"Using {ticker} data from {date_str} (latest available)")
-                return score
+        # Otherwise, get the most recent date (dates are sorted desc in response)
+        # Sort dates to ensure we get the latest
+        sorted_dates = sorted(history.keys(), reverse=True)
 
-        logger.warning(f"No Danelfin data found for {ticker} in the last {MAX_LOOKBACK_DAYS} days")
+        for check_date in sorted_dates[:MAX_LOOKBACK_DAYS + 1]:
+            scores = history[check_date]
+            if date and check_date != date:
+                logger.info(f"Using {ticker} data from {check_date} (latest available)")
+            return DanelfinScore(
+                ticker=ticker,
+                ai_score=scores.get("aiscore", 0),
+                fundamental_score=scores.get("fundamental", 0),
+                technical_score=scores.get("technical", 0),
+                sentiment_score=scores.get("sentiment", 0),
+                target_price=scores.get("target_price"),
+                date=check_date,
+            )
+
+        logger.warning(f"No recent Danelfin data found for {ticker}")
         return None
 
     def get_scores_batch(self, tickers: list[str], date: Optional[str] = None) -> dict[str, DanelfinScore]:
@@ -117,24 +136,16 @@ class DanelfinClient:
                 results[ticker] = score
         return results
 
-    def get_top_stocks(
-        self,
-        ai_score: Optional[int] = None,
-        buy_track_record: bool = False,
-        sell_track_record: bool = False,
-        date: Optional[str] = None,
-    ) -> list[DanelfinScore]:
+    def get_top_stocks(self, ai_score: int = 10, date: Optional[str] = None) -> list[DanelfinScore]:
         """
-        Get top stocks from Danelfin ranking.
+        Get all stocks with specified AI Score using bulk query.
 
         Args:
-            ai_score: Filter by specific AI score (e.g., 10 for highest)
-            buy_track_record: Filter stocks with BUY track record
-            sell_track_record: Filter stocks with SELL track record
-            date: Date in YYYY-MM-DD format. Defaults to today.
+            ai_score: Filter by AI Score (default 10 for highest)
+            date: Date in YYYY-MM-DD format. If None, tries recent dates.
 
         Returns:
-            List of DanelfinScore objects.
+            List of DanelfinScore objects for stocks matching the AI score.
         """
         start_date = datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
 
@@ -142,50 +153,43 @@ class DanelfinClient:
             check_date = start_date - timedelta(days=days_back)
             date_str = check_date.strftime("%Y-%m-%d")
 
-            results = self._fetch_top_stocks(date_str, ai_score, buy_track_record, sell_track_record)
+            results = self._fetch_top_stocks_by_score(date_str, ai_score)
             if results:
                 if days_back > 0:
                     logger.info(f"Using top stocks data from {date_str} (latest available)")
                 return results
 
-        logger.warning(f"No top stocks data found in the last {MAX_LOOKBACK_DAYS} days")
+        logger.warning(f"No AI Score {ai_score} stocks found in the last {MAX_LOOKBACK_DAYS} days")
         return []
 
-    def _fetch_top_stocks(
-        self,
-        date: str,
-        ai_score: Optional[int] = None,
-        buy_track_record: bool = False,
-        sell_track_record: bool = False,
-    ) -> list[DanelfinScore]:
-        """Fetch top stocks for a specific date."""
-        params = {"date": date, "asset": "stock"}
+    def _fetch_top_stocks_by_score(self, date: str, ai_score: int) -> list[DanelfinScore]:
+        """
+        Fetch all stocks with specified AI Score for a date.
 
-        if ai_score is not None:
-            params["aiscore"] = ai_score
-        if buy_track_record:
-            params["buy_track_record"] = 1
-        if sell_track_record:
-            params["sell_track_record"] = 1
+        Response format: {"2026-01-14": {"AGI": {...}, "BAC": {...}, ...}}
+        """
+        params = {"date": date, "aiscore": ai_score}
 
         try:
             response = self.session.get(self.base_url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
-            # API returns list of stocks when querying by date
-            if isinstance(data, list):
+            # Response format: {date: {ticker: {scores}, ...}}
+            if isinstance(data, dict) and date in data:
+                date_data = data[date]
                 results = []
-                for item in data:
+                for ticker, scores in date_data.items():
                     results.append(DanelfinScore(
-                        ticker=item.get("ticker", ""),
-                        ai_score=item.get("aiscore", 0),
-                        fundamental_score=item.get("fundamental", 0),
-                        technical_score=item.get("technical", 0),
-                        sentiment_score=item.get("sentiment", 0),
-                        target_price=item.get("target_price"),
+                        ticker=ticker,
+                        ai_score=scores.get("aiscore", 0),
+                        fundamental_score=scores.get("fundamental", 0),
+                        technical_score=scores.get("technical", 0),
+                        sentiment_score=scores.get("sentiment", 0),
+                        target_price=scores.get("target_price"),
                         date=date,
                     ))
+                logger.info(f"Found {len(results)} stocks with AI Score {ai_score} on {date}")
                 return results
             return []
 

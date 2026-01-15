@@ -139,7 +139,12 @@ docker compose restart
 # Stop services
 docker compose down
 
-# Update code and redeploy
+# Update trading service only (keeps FutuOpenD running)
+git pull
+docker compose build trading
+docker compose up -d --no-deps trading
+
+# Update all services (will restart FutuOpenD, may need re-verification)
 git pull
 docker compose up -d --build
 ```
@@ -182,7 +187,7 @@ trade/
 ### How It Works
 
 1. **Daily Check (21:00 HKT / on startup)**:
-   - Fetches all stocks with AI Score = 10 from Danelfin API
+   - Fetches all US stocks with AI Score = 10 from Danelfin API (typically 30-40 stocks)
    - Buys any new AI Score 10 stocks (up to max positions)
    - Checks current holdings - sells if AI Score dropped below 7
 

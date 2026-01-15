@@ -25,11 +25,6 @@ class Config:
     IS_SIMULATION: bool = os.getenv("IS_SIMULATION", "true").lower() == "true"
     MAX_POSITIONS: int = int(os.getenv("MAX_POSITIONS", "8"))
 
-    # Watchlist - configurable via environment
-    WATCHLIST: list[str] = [
-        s.strip() for s in os.getenv("WATCHLIST", "BAC,FHN,OZK,NBTB,SSB").split(",")
-    ]
-
     # Trading Strategy Thresholds
     BUY_SCORE_THRESHOLD: int = 10  # Buy when AI Score = 10
     SELL_SCORE_THRESHOLD: int = 7  # Sell when AI Score < 7
