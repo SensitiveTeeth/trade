@@ -361,7 +361,7 @@ class TradingStrategy:
             conn.commit()
 
     def run_daily_check(self) -> None:
-        """Run daily AI score check for all watchlist stocks."""
+        """Run daily check: buy AI Score 10 stocks, sell positions that dropped."""
         from datetime import datetime
 
         # Prevent duplicate runs on same day
@@ -371,25 +371,136 @@ class TradingStrategy:
             return
         self._last_daily_check_date = today
 
-        logger.info("Running daily AI score check...")
+        logger.info("Running daily Danelfin check...")
 
-        for ticker in config.WATCHLIST:
+        # 1. Check for BUY signals: Get AI Score = 10 stocks from Danelfin
+        self._check_buy_signals()
+
+        # 2. Check for SELL signals: Check current positions
+        self._check_sell_signals()
+
+        logger.info("Daily check completed")
+
+    def _check_buy_signals(self) -> None:
+        """Check Danelfin for AI Score 10 stocks to buy."""
+        logger.info("Fetching AI Score 10 stocks from Danelfin...")
+
+        top_stocks = danelfin_client.get_top_stocks(ai_score=10)
+
+        if not top_stocks:
+            logger.info("No AI Score 10 stocks found")
+            return
+
+        logger.info(f"Found {len(top_stocks)} stocks with AI Score 10")
+
+        for score in top_stocks:
+            ticker = score.ticker
             try:
-                signal = self.analyze_ticker(ticker)
-                if signal.action != "HOLD":
+                # Skip if already holding
+                if get_position(ticker):
+                    logger.info(f"{ticker}: Already holding, skip")
+                    continue
+
+                # Check position limit
+                if get_position_count() >= self.max_positions:
+                    logger.info(f"Max positions ({self.max_positions}) reached, stopping buy check")
+                    break
+
+                # Get current price
+                current_price = futu_trader.get_quote(ticker)
+                if not current_price:
+                    logger.warning(f"{ticker}: Could not get quote, skip")
+                    continue
+
+                logger.info(f"{ticker}: AI Score=10, Price=${current_price:.2f}, Action=BUY")
+
+                signal = TradeSignal(
+                    ticker=ticker,
+                    action="BUY",
+                    reason="AI Score = 10 (Strong Buy)",
+                    ai_score=score.ai_score,
+                    current_price=current_price,
+                    target_price=score.target_price,
+                )
+
+                telegram_notifier.notify_signal(
+                    ticker=ticker,
+                    signal_type="BUY",
+                    ai_score=score.ai_score,
+                    current_price=current_price,
+                    target_price=score.target_price,
+                )
+
+                self.execute_signal(signal)
+
+                # Save score to history
+                save_ai_score(
+                    ticker=ticker,
+                    ai_score=score.ai_score,
+                    fundamental_score=score.fundamental_score,
+                    technical_score=score.technical_score,
+                    sentiment_score=score.sentiment_score,
+                    target_price=score.target_price,
+                )
+
+            except Exception as e:
+                logger.error(f"Error processing {ticker}: {e}")
+
+    def _check_sell_signals(self) -> None:
+        """Check current positions for sell signals based on AI score drop."""
+        positions = get_all_positions()
+        if not positions:
+            logger.info("No positions to check for sell signals")
+            return
+
+        logger.info(f"Checking {len(positions)} positions for sell signals...")
+
+        for position in positions:
+            ticker = position["ticker"]
+            try:
+                # Get latest AI score
+                score = danelfin_client.get_score(ticker)
+                if not score:
+                    logger.warning(f"{ticker}: Could not get AI score")
+                    continue
+
+                current_price = futu_trader.get_quote(ticker)
+
+                logger.info(f"{ticker}: AI Score={score.ai_score}, Price=${current_price:.2f if current_price else 0}")
+
+                # Check if AI score dropped below threshold
+                if score.ai_score < self.sell_threshold:
+                    logger.info(f"{ticker}: AI Score={score.ai_score} < {self.sell_threshold}, Action=SELL")
+
+                    signal = TradeSignal(
+                        ticker=ticker,
+                        action="SELL",
+                        reason=f"AI Score dropped to {score.ai_score} (below {self.sell_threshold})",
+                        ai_score=score.ai_score,
+                        current_price=current_price,
+                    )
+
                     telegram_notifier.notify_signal(
                         ticker=ticker,
-                        signal_type=signal.action,
-                        ai_score=signal.ai_score or 0,
-                        current_price=signal.current_price,
-                        target_price=signal.target_price,
+                        signal_type="SELL",
+                        ai_score=score.ai_score,
+                        current_price=current_price,
                     )
-                    self.execute_signal(signal)
-            except Exception as e:
-                logger.error(f"Error analyzing {ticker}: {e}")
-                telegram_notifier.notify_error(f"Error analyzing {ticker}: {e}")
 
-        logger.info("Daily AI score check completed")
+                    self.execute_signal(signal)
+
+                # Save score to history
+                save_ai_score(
+                    ticker=ticker,
+                    ai_score=score.ai_score,
+                    fundamental_score=score.fundamental_score,
+                    technical_score=score.technical_score,
+                    sentiment_score=score.sentiment_score,
+                    target_price=score.target_price,
+                )
+
+            except Exception as e:
+                logger.error(f"Error checking {ticker}: {e}")
 
     def run_price_check(self) -> None:
         """Run price check for stop loss/take profit on current positions."""

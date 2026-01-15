@@ -170,23 +170,31 @@ trade/
 
 ## Trading Strategy
 
+### Buy/Sell Rules
+
 | Condition | Action |
 |-----------|--------|
-| AI Score = 10 | Buy |
-| AI Score < 7 | Sell |
+| AI Score = 10 (from Danelfin Top Stocks) | Buy |
+| Holding position with AI Score < 7 | Sell |
 | +15% from entry | Take profit |
 | -8% from entry | Stop loss |
+
+### How It Works
+
+1. **Daily Check (21:00 HKT / on startup)**:
+   - Fetches all stocks with AI Score = 10 from Danelfin API
+   - Buys any new AI Score 10 stocks (up to max positions)
+   - Checks current holdings - sells if AI Score dropped below 7
+
+2. **Price Check (every 1 minute)**:
+   - Monitors stop loss (-8%) and take profit (+15%) for all positions
 
 ### Schedule
 
 | Task | Frequency | Time (HKT) |
 |------|-----------|------------|
-| AI Score check | Daily | 21:00 (before US market open) |
+| Danelfin AI Score 10 check | Daily + on startup | 21:00 |
 | Price check (stop loss/take profit) | Every 1 minute | During market hours |
-
-### Default Watchlist
-
-Bank stocks: `BAC`, `FHN`, `OZK`, `NBTB`, `SSB`
 
 ## Maintenance
 

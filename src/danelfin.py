@@ -117,6 +117,89 @@ class DanelfinClient:
                 results[ticker] = score
         return results
 
+    def get_top_stocks(
+        self,
+        ai_score: Optional[int] = None,
+        buy_track_record: bool = False,
+        sell_track_record: bool = False,
+        date: Optional[str] = None,
+    ) -> list[DanelfinScore]:
+        """
+        Get top stocks from Danelfin ranking.
+
+        Args:
+            ai_score: Filter by specific AI score (e.g., 10 for highest)
+            buy_track_record: Filter stocks with BUY track record
+            sell_track_record: Filter stocks with SELL track record
+            date: Date in YYYY-MM-DD format. Defaults to today.
+
+        Returns:
+            List of DanelfinScore objects.
+        """
+        start_date = datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
+
+        for days_back in range(MAX_LOOKBACK_DAYS + 1):
+            check_date = start_date - timedelta(days=days_back)
+            date_str = check_date.strftime("%Y-%m-%d")
+
+            results = self._fetch_top_stocks(date_str, ai_score, buy_track_record, sell_track_record)
+            if results:
+                if days_back > 0:
+                    logger.info(f"Using top stocks data from {date_str} (latest available)")
+                return results
+
+        logger.warning(f"No top stocks data found in the last {MAX_LOOKBACK_DAYS} days")
+        return []
+
+    def _fetch_top_stocks(
+        self,
+        date: str,
+        ai_score: Optional[int] = None,
+        buy_track_record: bool = False,
+        sell_track_record: bool = False,
+    ) -> list[DanelfinScore]:
+        """Fetch top stocks for a specific date."""
+        params = {"date": date, "asset": "stock"}
+
+        if ai_score is not None:
+            params["aiscore"] = ai_score
+        if buy_track_record:
+            params["buy_track_record"] = 1
+        if sell_track_record:
+            params["sell_track_record"] = 1
+
+        try:
+            response = self.session.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            # API returns list of stocks when querying by date
+            if isinstance(data, list):
+                results = []
+                for item in data:
+                    results.append(DanelfinScore(
+                        ticker=item.get("ticker", ""),
+                        ai_score=item.get("aiscore", 0),
+                        fundamental_score=item.get("fundamental", 0),
+                        technical_score=item.get("technical", 0),
+                        sentiment_score=item.get("sentiment", 0),
+                        target_price=item.get("target_price"),
+                        date=date,
+                    ))
+                return results
+            return []
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return []
+            logger.error(f"Danelfin API HTTP error for top stocks: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Danelfin API request error for top stocks: {e}")
+        except Exception as e:
+            logger.error(f"Danelfin API parse error for top stocks: {e}")
+
+        return []
+
 
 # Singleton instance
 danelfin_client = DanelfinClient()
