@@ -154,3 +154,14 @@ __pypackages__/
 # ==================================
 .DS_Store
 Thumbs.db
+
+# ==================================
+# Trading System
+# ==================================
+data/
+logs/
+*.db
+
+# FutuOpenD credentials (keep template only)
+futuopend/FutuOpenD.xml
+!futuopend/FutuOpenD.xml.example

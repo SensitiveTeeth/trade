@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  futuopend:
+    image: futuopend:latest
+    build:
+      context: ./futuopend
+      dockerfile: Dockerfile
+    container_name: futuopend
+    ports:
+      - "11111:11111"  # Trading API
+      - "11112:11112"  # Quote API
+    volumes:
+      - ./futuopend/FutuOpenD.xml:/app/FutuOpenD.xml
+      - futu_data:/app/data
+    restart: unless-stopped
+    networks:
+      - trading-net
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "11111"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  trading:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading
+    depends_on:
+      futuopend:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - FUTU_HOST=futuopend
+      - FUTU_PORT=11111
+      - TZ=Asia/Hong_Kong
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - trading-net
+
+networks:
+  trading-net:
+    driver: bridge
+
+volumes:
+  futu_data:

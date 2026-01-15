@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <!-- 登入帳號密碼（需填入你的富途帳號） -->
+    <login_account></login_account>
+    <!-- 密碼二選一：明文或 MD5 -->
+    <login_pwd></login_pwd>
+    <!-- <login_pwd_md5></login_pwd_md5> -->
+
+    <!-- API 接口設定 -->
+    <api_ip>0.0.0.0</api_ip>
+    <api_port>11111</api_port>
+    <qot_port>11112</qot_port>
+
+    <!-- 日誌設定 -->
+    <log_level>info</log_level>
+</root>
