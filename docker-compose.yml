@@ -12,7 +12,6 @@ services:
       - "11112:11112"  # Quote API
     volumes:
       - ./futuopend/FutuOpenD.xml:/app/FutuOpenD.xml
-      - ./futuopend/AppData.dat:/app/AppData.dat
       - ./futuopend/Log:/app/Log
     restart: unless-stopped
     networks:
