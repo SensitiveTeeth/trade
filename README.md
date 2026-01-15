@@ -160,9 +160,30 @@ trade/
 
 Bank stocks: `BAC`, `FHN`, `OZK`, `NBTB`, `SSB`
 
+## Maintenance
+
+### Clean Up Docker Images
+
+After rebuilding, old images accumulate and consume disk space. Run periodically:
+
+```bash
+# Clean unused images, containers, and build cache
+docker system prune -a -f
+
+# Check disk usage
+docker system df
+df -h
+```
+
 ## Notes
 
 1. **Test with simulation first** - Set `IS_SIMULATION=true` in `.env`
 2. **Keep API keys secure** - Do not commit `.env` to Git
 3. **Monitor service status** - Regularly check Telegram notifications and logs
 4. **Max positions** - Default limit is 8 concurrent positions
+
+## TODO
+
+- [ ] GitHub Actions CI/CD for automated deployment
+- [ ] Auto cleanup old Docker images after deployment
+- [ ] Daily summary notification (scheduled at 05:00 HKT)

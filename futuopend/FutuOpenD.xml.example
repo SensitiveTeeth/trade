@@ -1,16 +1,31 @@
-<?xml version="1.0" encoding="utf-8"?>
-<root>
-    <!-- 登入帳號密碼（需填入你的富途帳號） -->
-    <login_account></login_account>
-    <!-- 密碼二選一：明文或 MD5 -->
-    <login_pwd></login_pwd>
-    <!-- <login_pwd_md5></login_pwd_md5> -->
-
-    <!-- API 接口設定 -->
-    <api_ip>0.0.0.0</api_ip>
-    <api_port>11111</api_port>
-    <qot_port>11112</qot_port>
-
-    <!-- 日誌設定 -->
-    <log_level>info</log_level>
-</root>
+<futu_opend>
+	<!-- 基础参数 -->
+		<!-- 协议监听地址，Docker 中需設為 0.0.0.0 -->
+		<ip>0.0.0.0</ip>
+		<!-- API接口协议监听端口 -->
+		<api_port>11111</api_port>
+		<!-- 登录帐号（手机号格式：+852 98765432 或 +86 13800138000） -->
+		<login_account></login_account>
+		<!-- 登录密码明文 -->
+		<login_pwd></login_pwd>
+		<!-- 或使用 MD5 密码（32位16进制） -->
+		<!-- <login_pwd_md5></login_pwd_md5> -->
+		<!-- 语言：en 英文，chs 简体中文 -->
+		<lang>chs</lang>
+	<!-- 进阶参数 -->
+		<!-- 日志等级：no, debug, info, warning, error, fatal -->
+		<log_level>info</log_level>
+		<!-- API推送协议格式，0：pb, 1：json -->
+		<push_proto_type>0</push_proto_type>
+		<!-- 是否接收到价提醒推送，0：不接收，1：接收 -->
+		<price_reminder_push>1</price_reminder_push>
+		<!-- 被踢后是否自动抢权限，0：否，1：是 -->
+		<auto_hold_quote_right>1</auto_hold_quote_right>
+		<!-- 期货交易时区 -->
+		<future_trade_api_time_zone>UTC+8</future_trade_api_time_zone>
+	<!-- FUTU US 专用参数 -->
+		<!-- 防止被标记为日内交易者，0：否，1：是 -->
+		<pdt_protection>1</pdt_protection>
+		<!-- 日内交易保证金追缴预警，0：否，1：是 -->
+		<dtcall_confirmation>1</dtcall_confirmation>
+</futu_opend>
